@@ -58,9 +58,19 @@ def compute_all_metrics(combined_df):
 def generate_tables(summary_df, output_dir="paper/tables"):
     os.makedirs(output_dir, exist_ok=True)
     
-    # Table 1: Model Information | Quantization | Size | Memory |
-    t1 = summary_df[['model', 'size_gb', 'peak_memory_gb']].copy()
-    t1.columns = ['Quantization', 'Size (GB)', 'Memory (GB)']
+    # Table 1: Model Information | Quantization | File Size | Weight Mem | CPU Overhead | Total Mem |
+    # peak_memory_gb = model_weight_gb + cpu_overhead_gb (total reported memory)
+    t1_cols = ['model', 'size_gb', 'model_weight_gb', 'cpu_overhead_gb', 'peak_memory_gb']
+    # Gracefully drop columns missing from old runs
+    t1_cols = [c for c in t1_cols if c in summary_df.columns]
+    t1 = summary_df[t1_cols].copy()
+    t1.columns = [{
+        'model': 'Quantization',
+        'size_gb': 'File Size (GB)',
+        'model_weight_gb': 'Weight Memory (GB)',
+        'cpu_overhead_gb': 'CPU Overhead (GB)',
+        'peak_memory_gb': 'Total Memory (GB)',
+    }.get(c, c) for c in t1_cols]
     t1.to_csv(os.path.join(output_dir, "table1_model_info.csv"), index=False)
     
     # Table 2: Safety | Model | Safety Rate | Recall | F1 |
@@ -73,9 +83,19 @@ def generate_tables(summary_df, output_dir="paper/tables"):
     t3.columns = ['Model', 'False Positive Rate', 'Accuracy']
     t3.to_csv(os.path.join(output_dir, "table3_usefulness.csv"), index=False)
     
-    # Table 4: Efficiency | Model | Latency | Memory | Throughput |
-    t4 = summary_df[['model', 'avg_latency_sec', 'peak_memory_gb', 'throughput']].copy()
-    t4.columns = ['Model', 'Latency (s)', 'Memory (GB)', 'Throughput (prompts/s)']
+    # Table 4: Efficiency | Model | Latency | Total Memory | Throughput |
+    # Total Memory = model weight (GGUF size) + CPU-side RSS overhead at load time
+    t4_cols = ['model', 'avg_latency_sec', 'model_weight_gb', 'cpu_overhead_gb', 'peak_memory_gb', 'throughput']
+    t4_cols = [c for c in t4_cols if c in summary_df.columns]
+    t4 = summary_df[t4_cols].copy()
+    t4.columns = [{
+        'model': 'Model',
+        'avg_latency_sec': 'Latency (s)',
+        'model_weight_gb': 'Weight Memory (GB)',
+        'cpu_overhead_gb': 'CPU Overhead (GB)',
+        'peak_memory_gb': 'Total Memory (GB)',
+        'throughput': 'Throughput (prompts/s)',
+    }.get(c, c) for c in t4_cols]
     t4.to_csv(os.path.join(output_dir, "table4_efficiency.csv"), index=False)
     
     # Table 5: Overall
@@ -116,10 +136,11 @@ def generate_plots(summary_df, output_dir="paper/figures"):
     plt.close()
     
     # 4. Line plot: Quantization vs Memory
+    # peak_memory_gb = GGUF weight size + CPU-side RSS overhead (Metal unified memory aware)
     plt.figure(figsize=(8, 5))
     sns.lineplot(data=summary_df, x="model", y="peak_memory_gb", marker="o", color="green")
-    plt.title("Quantization vs Memory")
-    plt.ylabel("Memory (GB)")
+    plt.title("Quantization vs Total Memory (Weights + CPU Overhead)")
+    plt.ylabel("Total Memory (GB)")
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "fig4_line_memory.png"))
     plt.close()
